@@ -1200,3 +1200,70 @@ a {
   .route-shell { border: 1px solid var(--line); }
   .method-disclosure > .method-body { display: block !important; }
 }
+
+/* Closure counterfactual: the chart carries the story, the aside the numbers. */
+.closure-card {
+  grid-template-columns: 1.42fr 0.78fr;
+}
+
+.closure-card h4 {
+  margin: 4px 0 6px;
+  font-family: var(--serif);
+  font-size: 1.34rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.closure-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin: 14px 0 4px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.closure-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.key-line {
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top-width: 2.4px;
+  border-top-style: solid;
+}
+
+.key-traffic { border-top-color: var(--orange); border-top-style: dashed; }
+.key-closed { border-top-color: var(--navy); }
+
+.closure-wrap {
+  min-height: 250px;
+}
+
+.closure-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 14px;
+}
+
+.closure-toggle span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.closure-toggle .compact-button[aria-pressed="true"] {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+@media (max-width: 940px) {
+  .closure-card { grid-template-columns: 1fr; }
+}

@@ -87,6 +87,30 @@ type MapContext = {
 
 type LocatorEntry = { country: string; ring: number[]; city: number[] };
 
+// The closure counterfactual: `bg` is the published background (a closed road),
+// `tr` the same point with normal traffic running beside it.
+type ClosurePoint = { km: number; bg: number; tr: number; d: number | null; k: string };
+
+type Closure = {
+  city: string;
+  pollutant: Pollutant;
+  alpha: number;
+  lambda_m: number;
+  summary: {
+    mean_background: number;
+    mean_with_traffic: number;
+    pct_removed: number;
+    uplift_pct: number;
+    max_factor: number;
+    median_factor: number;
+    peak_km: number;
+    peak_background: number;
+    peak_with_traffic: number;
+    share_within_25m_of_major_road: number;
+  };
+  points: ClosurePoint[];
+};
+
 type Locators = Record<string, LocatorEntry>;
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -222,6 +246,7 @@ function AirMap({
   pollutant,
   progress,
   locator,
+  traffic,
 }: {
   city: City;
   field: Field;
@@ -229,6 +254,7 @@ function AirMap({
   pollutant: Pollutant;
   progress: number;
   locator?: LocatorEntry | null;
+  traffic?: { values: number[] | null; min: number; max: number } | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fieldLayer = field.fields[pollutant];
@@ -337,9 +363,14 @@ function AirMap({
       ctx.stroke();
     }
 
-    const routeMin = city.summary[pollutant].min;
-    const routeMax = city.summary[pollutant].max;
+    // With the overlay on, both states share one scale, so switching between them
+    // is a real comparison rather than two independently stretched ramps.
+    const routeMin = traffic ? traffic.min : city.summary[pollutant].min;
+    const routeMax = traffic ? traffic.max : city.summary[pollutant].max;
     const routeT = (value: number) => (value - routeMin) / Math.max(0.01, routeMax - routeMin);
+    const routeValue = (index: number, point: RoutePoint) => (
+      traffic?.values ? traffic.values[index] ?? point[pollutant] : point[pollutant]
+    );
     const progressKm = city.distance_km * progress;
     const firstPointAfterProgress = city.route.findIndex((point) => point.km >= progressKm);
     const currentIndex = firstPointAfterProgress === -1 ? city.route.length - 1 : firstPointAfterProgress;
@@ -371,7 +402,7 @@ function AirMap({
       ctx.beginPath();
       ctx.moveTo(x(before.lon), y(before.lat));
       ctx.lineTo(x(point.lon), y(point.lat));
-      ctx.strokeStyle = rampColor(routeT((before[pollutant] + point[pollutant]) / 2));
+      ctx.strokeStyle = rampColor(routeT((routeValue(index - 1, before) + routeValue(index, point)) / 2));
       ctx.lineWidth = 5;
       ctx.stroke();
     }
@@ -656,7 +687,7 @@ function AirMap({
     ctx.textAlign = "left";
     ctx.letterSpacing = "0px";
     void cosLat;
-  }, [buffer, city, context, field, locator, pollutant, progress]);
+  }, [buffer, city, context, field, locator, pollutant, progress, traffic]);
 
   useEffect(() => {
     draw();
@@ -673,7 +704,8 @@ function AirMap({
         aria-label={`${city.city} route map coloured by ${POLLUTANTS[pollutant].long}, shown to ${Math.round(progress * city.distance_km)} kilometres`}
       />
       <div className="map-legend" aria-hidden="true">
-        <span>Lower</span><i className="route-ramp"/><span>Higher on this route</span>
+        <span>Lower</span><i className="route-ramp"/>
+        <span>{traffic ? "Higher · one scale for both states" : "Higher on this route"}</span>
       </div>
       <span className="map-source">
         500 m air field · OSM road context{hasNoData ? " · grey = outside model grid" : ""}
@@ -814,6 +846,247 @@ function ProfileChart({ city, pollutant, progress }: { city: City; pollutant: Po
   return <canvas ref={canvasRef} className="profile-canvas" role="img" aria-label={`${config.label} along the ${city.city} route by distance`}/>;
 }
 
+function ClosureProfile({ city, closure, context }: { city: City; closure: Closure; context: MapContext | null }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const reference = POLLUTANTS.no2.reference;
+
+  // Where the course passes closest to a named landmark, so the reader can see
+  // that the gap closes in the parks and opens on the arterial sections.
+  const marks = useMemo(() => {
+    const labels = (context?.labels ?? []).filter((label) => label.k !== "sea" && label.k !== "water");
+    const found = labels.map((label) => {
+      let bestKm = 0;
+      let bestDistance = Infinity;
+      for (const point of city.route) {
+        const distance = Math.hypot(
+          (point.lon - label.x) * Math.cos((label.y * Math.PI) / 180),
+          point.lat - label.y,
+        );
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestKm = point.km;
+        }
+      }
+      return { name: label.n, km: bestKm, distance: bestDistance * 111.32 };
+    });
+    const chosen: Array<{ name: string; km: number }> = [];
+    for (const candidate of found.filter((item) => item.distance < 1.2).sort((a, b) => a.km - b.km)) {
+      if (chosen.every((item) => Math.abs(item.km - candidate.km) > city.distance_km * 0.16)) {
+        chosen.push({ name: candidate.name, km: candidate.km });
+      }
+    }
+    return chosen.slice(0, 3);
+  }, [city, context]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(bounds.width * dpr);
+    canvas.height = Math.round(bounds.height * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const width = bounds.width;
+    const height = bounds.height;
+    const margin = { top: 18, right: 14, bottom: marks.length ? 40 : 28, left: 42 };
+    const plotW = width - margin.left - margin.right;
+    const plotH = height - margin.top - margin.bottom;
+    const points = closure.points;
+    const low = Math.max(0, Math.min(...points.map((point) => point.bg)) * 0.8);
+    const high = Math.max(...points.map((point) => point.tr), reference) * 1.1;
+    const x = (km: number) => margin.left + (km / city.distance_km) * plotW;
+    const y = (value: number) => margin.top + (1 - (value - low) / Math.max(0.1, high - low)) * plotH;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = "#dbe5ec";
+    ctx.lineWidth = 1;
+    for (let index = 0; index < 3; index += 1) {
+      const py = margin.top + (index / 2) * plotH;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, py);
+      ctx.lineTo(width - margin.right, py);
+      ctx.stroke();
+    }
+
+    // The gap is the story: shade what the closure takes away.
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      const px = x(point.km);
+      const py = y(point.tr);
+      if (index === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    for (let index = points.length - 1; index >= 0; index -= 1) {
+      ctx.lineTo(x(points[index].km), y(points[index].bg));
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255, 97, 10, .20)";
+    ctx.fill();
+
+    const line = (key: "bg" | "tr", stroke: string, dash: number[]) => {
+      ctx.save();
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const px = x(point.km);
+        const py = y(point[key]);
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2.2;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+      ctx.restore();
+    };
+    line("tr", "#ff610a", [5, 4]);
+    line("bg", "#1a0e9a", []);
+
+    const referenceY = y(reference);
+    if (referenceY > margin.top && referenceY < height - margin.bottom) {
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = "rgba(249, 65, 57, .75)";
+      ctx.beginPath();
+      ctx.moveTo(margin.left, referenceY);
+      ctx.lineTo(width - margin.right, referenceY);
+      ctx.stroke();
+      ctx.restore();
+      ctx.font = `700 9px ${MAP_FONT}`;
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255, 255, 255, .9)";
+      ctx.strokeText("WHO 24-hour reference", margin.left + 4, referenceY - 5);
+      ctx.fillStyle = "rgba(249, 65, 57, .95)";
+      ctx.fillText("WHO 24-hour reference", margin.left + 4, referenceY - 5);
+    }
+
+    ctx.font = `600 9.5px ${MAP_FONT}`;
+    ctx.fillStyle = "var(--muted)";
+    ctx.fillStyle = "rgba(98, 102, 132, .95)";
+    ctx.fillText(`${Math.round(high)}`, 8, margin.top + 4);
+    ctx.fillText(`${Math.round(low)}`, 8, height - margin.bottom);
+    ctx.fillText("0 km", margin.left, height - margin.bottom + 14);
+    ctx.textAlign = "right";
+    ctx.fillText(`${city.distance_km.toFixed(1)} km`, width - margin.right, height - margin.bottom + 14);
+    ctx.textAlign = "left";
+
+    for (const mark of marks) {
+      const px = x(mark.km);
+      ctx.strokeStyle = "rgba(98, 102, 132, .45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px, height - margin.bottom);
+      ctx.lineTo(px, height - margin.bottom + 5);
+      ctx.stroke();
+      ctx.font = `600 9px ${MAP_FONT}`;
+      ctx.fillStyle = "rgba(70, 76, 110, .92)";
+      ctx.textAlign = px > width - 80 ? "right" : px < 80 ? "left" : "center";
+      ctx.fillText(mark.name, px, height - margin.bottom + 26);
+      ctx.textAlign = "left";
+    }
+  }, [city, closure, marks, reference]);
+
+  useEffect(() => {
+    draw();
+    const observer = new ResizeObserver(draw);
+    if (canvasRef.current) observer.observe(canvasRef.current);
+    return () => observer.disconnect();
+  }, [draw]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="profile-canvas"
+      role="img"
+      aria-label={`Modelled NO2 along the ${city.city} course with normal traffic compared with the road closed`}
+    />
+  );
+}
+
+function ClosureSection({ city, closure, context }: { city: City; closure: Closure; context: MapContext | null }) {
+  const summary = closure.summary;
+  return (
+    <section className="section" id="closure">
+      <div className="shell">
+        <div className="section-head">
+          <p className="section-kicker">What the closure removes</p>
+          <h2>The same Sunday, with the traffic running</h2>
+          <p>
+            Everything above describes race day, when the course is closed to traffic. This compares it
+            with the same route, the same hours and the same weather, but with traffic on the road —
+            the run you would do on any other Sunday.
+          </p>
+        </div>
+
+        <div className="comparison-card closure-card">
+          <div>
+            <p className="mini-label">Nitrogen dioxide along the course</p>
+            <h4>Closed road versus normal Sunday traffic</h4>
+            <p className="chart-subtitle">
+              The shaded band is the roadside increment the closure removes. It opens where the course
+              runs beside main roads and closes to nothing through the parks. With the traffic running,
+              about a third of the course sits above the WHO 24-hour NO₂ reference value; with the roads
+              closed, none of it does — though a race-window average is not a like-for-like test of a
+              24-hour guideline.
+            </p>
+            <div className="closure-key" aria-hidden="true">
+              <span><i className="key-line key-traffic"/>Normal Sunday traffic</span>
+              <span><i className="key-line key-closed"/>Race day, road closed</span>
+            </div>
+            <div className="profile-wrap closure-wrap">
+              <ClosureProfile city={city} closure={closure} context={context}/>
+            </div>
+          </div>
+          <aside>
+            <div className="metrics-grid">
+              <div className="metric">
+                <div className="metric-label">Road closed</div>
+                <div className="metric-value">{summary.mean_background.toFixed(1)}<span> µg/m³</span></div>
+                <div className="metric-note">Race day, as published above</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Normal traffic</div>
+                <div className="metric-value">{summary.mean_with_traffic.toFixed(1)}<span> µg/m³</span></div>
+                <div className="metric-note">Same route, same hours, traffic running</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Closure removes</div>
+                <div className="metric-value">{summary.pct_removed}<span>%</span></div>
+                <div className="metric-note">Of the NO₂ a runner would otherwise meet</div>
+              </div>
+              <div className="metric">
+                <div className="metric-label">Beside a main road</div>
+                <div className="metric-value">{Math.round(summary.share_within_25m_of_major_road * 100)}<span>%</span></div>
+                <div className="metric-note">Of the course within 25 m of a carriageway</div>
+              </div>
+            </div>
+            <div className="context-note">
+              <strong>How this is estimated</strong>
+              <p>
+                A proximity increment is applied to each point of the course from its lateral distance
+                to the nearest carriageway and that road&rsquo;s class, using AirTrack&rsquo;s production
+                traffic-proximity factors (kerbside NO₂ enhancement of 1.45× for a primary road, 1.60×
+                for a trunk road, decaying over about 40 m). NO₂ only: it carries essentially all of the
+                near-road gradient, while PM₂.₅ is regional and would barely move.
+              </p>
+              <p>
+                Two limits matter. The factors are annual averages from UK reference monitors, so for a
+                Sunday morning — lighter traffic than a weekday peak — this is an upper bound on the
+                increment. And a closure diverts traffic rather than deleting it: the benefit to the
+                runner on this line is real, but the city-wide benefit is smaller.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function WeekBars({ city, pollutant }: { city: City; pollutant: Pollutant }) {
   const values = city.week.days.map((day) => day[pollutant]);
   const low = Math.min(...values);
@@ -847,6 +1120,9 @@ export function MarathonStory() {
   const [field, setField] = useState<Field | null>(null);
   const [context, setContext] = useState<MapContext | null>(null);
   const [locators, setLocators] = useState<Locators>({});
+  const [closures, setClosures] = useState<Record<string, Closure>>({});
+  const [closureContext, setClosureContext] = useState<MapContext | null>(null);
+  const [showTraffic, setShowTraffic] = useState(false);
   const [error, setError] = useState("");
   const [shareLabel, setShareLabel] = useState("Share");
   const [routeProgress, setRouteProgress] = useState(1);
@@ -859,6 +1135,8 @@ export function MarathonStory() {
     const pol = params.get("pollutant") as Pollutant | null;
     if (city && ORDER.includes(city)) setSelectedCity(city);
     if (pol && pol in POLLUTANTS) setPollutant(pol);
+    // ?traffic=1 opens on the with-traffic overlay, so the comparison can be linked to directly.
+    if (params.get("traffic") === "1") setShowTraffic(true);
     fetch(`${ASSET_BASE}data/marathons.json`)
       .then((response) => {
         if (!response.ok) throw new Error("The route data could not be loaded.");
@@ -872,6 +1150,16 @@ export function MarathonStory() {
       .then((response) => (response.ok ? response.json() : {}))
       .then((data: Locators) => setLocators(data))
       .catch(() => setLocators({}));
+    // Closure counterfactual exists only where the road-gradient factors are
+    // anchored (London). A miss costs that one section, not the page.
+    fetch(`${ASSET_BASE}data/closure/london.json`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: Closure | null) => setClosures(data ? { [data.city]: data } : {}))
+      .catch(() => setClosures({}));
+    fetch(`${ASSET_BASE}data/context/london.json`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: MapContext | null) => setClosureContext(data))
+      .catch(() => setClosureContext(null));
   }, []);
 
   useEffect(() => {
@@ -934,6 +1222,19 @@ export function MarathonStory() {
   }, [routePlaying]);
 
   const city = payload?.cities.find((item) => item.slug === selectedCity) ?? null;
+  const closure = closures[selectedCity] ?? null;
+  const trafficOverlay = useMemo(() => {
+    // Only where the factors are anchored, and only for the pollutant they describe.
+    if (!closure || pollutant !== "no2") return null;
+    const traffic = closure.points.map((point) => point.tr);
+    return {
+      // null values = draw the published background, but on the shared scale.
+      values: showTraffic ? traffic : null,
+      min: Math.min(...closure.points.map((point) => point.bg)),
+      max: Math.max(...traffic),
+    };
+  }, [closure, pollutant, showTraffic]);
+
   const ranked = useMemo(() => {
     if (!payload) return [];
     return [...payload.cities].sort((a, b) => b.summary[pollutant].mean - a.summary[pollutant].mean);
@@ -1108,10 +1409,27 @@ export function MarathonStory() {
                     <span className={`evidence-badge ${EVIDENCE[city.confidence].className}`}>{EVIDENCE[city.confidence].label}</span>
                   </div>
                   {field && context ? (
-                    <AirMap city={city} field={field} context={context} pollutant={pollutant} progress={routeProgress} locator={locators[city.slug]}/>
+                    <AirMap city={city} field={field} context={context} pollutant={pollutant} progress={routeProgress} locator={locators[city.slug]} traffic={trafficOverlay}/>
                   ) : (
                     <div className="map-frame map-loading">Drawing {city.city}…</div>
                   )}
+                  {closure && pollutant === "no2" ? (
+                    <div className="closure-toggle">
+                      <button
+                        type="button"
+                        className="compact-button"
+                        aria-pressed={showTraffic}
+                        onClick={() => setShowTraffic((shown) => !shown)}
+                      >
+                        {showTraffic ? "Show race day (road closed)" : "Show a normal Sunday, traffic running"}
+                      </button>
+                      <span>
+                        {showTraffic
+                          ? `Modelled with traffic beside the course: ${closure.summary.mean_with_traffic.toFixed(1)} µg/m³ on average`
+                          : `Race day, roads closed: ${closure.summary.mean_background.toFixed(1)} µg/m³ on average`}
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="replay-panel">
                     <button
                       type="button"
@@ -1203,6 +1521,14 @@ export function MarathonStory() {
             </div>
           </div>
         </section>
+
+        {closures.london && payload.cities.some((entry) => entry.slug === "london") ? (
+          <ClosureSection
+            city={payload.cities.find((entry) => entry.slug === "london")!}
+            closure={closures.london}
+            context={closureContext}
+          />
+        ) : null}
 
         <section className="section">
           <div className="shell">
