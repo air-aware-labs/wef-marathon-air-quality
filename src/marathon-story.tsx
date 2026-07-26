@@ -74,11 +74,30 @@ type Field = {
   fields: Record<Pollutant, { lo: number; hi: number; data: string; coverage: number }>;
 };
 
+type MapLabelKind = "sea" | "water" | "park" | "place" | "spot" | "road";
+
+type MapLabel = { n: string; x: number; y: number; k: MapLabelKind };
+
 type MapContext = {
   city: string;
   roads: Array<{ c: number[]; k: string }>;
   water: number[][];
+  labels?: MapLabel[];
 };
+
+type LocatorEntry = { country: string; ring: number[]; city: number[] };
+
+type Locators = Record<string, LocatorEntry>;
+
+type Rect = { x: number; y: number; w: number; h: number };
+
+// The panel's own type, so canvas labels match the page instead of falling back
+// to a system face.
+const MAP_FONT = '"DM Sans", "Segoe UI", sans-serif';
+
+// Cells the model does not cover are sea. Deliberately outside the field's blue
+// ramp so "no data" can never be read as "low concentration".
+const SEA_RGB = [170, 191, 204];
 
 const ORDER = ["paris", "london", "bangkok", "accra", "dakar"];
 
@@ -170,6 +189,26 @@ function rampColor(t: number, muted = false) {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
+// Land features are separated by weight and case rather than colour: the route
+// ramp already owns green-to-red, so coloured labels would read as data.
+const LABEL_STYLE: Record<MapLabelKind, {
+  font: string;
+  fill: string;
+  dot: boolean;
+  caps?: boolean;
+}> = {
+  sea: { font: `italic 600 12px ${MAP_FONT}`, fill: "rgba(52, 88, 108, .95)", dot: false },
+  water: { font: `italic 600 11.5px ${MAP_FONT}`, fill: "rgba(20, 70, 124, .92)", dot: false },
+  park: { font: `600 11px ${MAP_FONT}`, fill: "rgba(30, 44, 72, .84)", dot: false },
+  road: { font: `600 10px ${MAP_FONT}`, fill: "rgba(46, 52, 80, .8)", dot: false },
+  place: { font: `700 10px ${MAP_FONT}`, fill: "rgba(14, 18, 42, .9)", dot: true, caps: true },
+  spot: { font: `600 10.5px ${MAP_FONT}`, fill: "rgba(22, 28, 56, .86)", dot: true },
+};
+
+function intersects(a: Rect, b: Rect) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
 function decodeHex(hex: string) {
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -182,17 +221,22 @@ function AirMap({
   context,
   pollutant,
   progress,
+  locator,
 }: {
   city: City;
   field: Field;
   context: MapContext;
   pollutant: Pollutant;
   progress: number;
+  locator?: LocatorEntry | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fieldLayer = field.fields[pollutant];
   const buffer = useMemo(() => decodeHex(fieldLayer.data), [fieldLayer.data]);
   const geoAspect = (field.nx * Math.cos((field.lat0 + field.ny * field.cell * 0.5) * Math.PI / 180)) / field.ny;
+  // Coastal panels carry cells the model does not cover; the caption only claims
+  // that where it is true.
+  const hasNoData = useMemo(() => buffer.some((value) => value === 0), [buffer]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -207,6 +251,9 @@ function AirMap({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const width = bounds.width;
     const height = bounds.height;
+    // Everything drawn on the panel registers its box here, so place names can
+    // only take space that is genuinely free.
+    const occupied: Rect[] = [];
     const cosLat = Math.cos((field.lat0 + field.ny * field.cell * 0.5) * Math.PI / 180);
     const x = (lon: number) => ((lon - field.lon0) / (field.nx * field.cell)) * width;
     const y = (lat: number) => height - ((lat - field.lat0) / (field.ny * field.cell)) * height;
@@ -223,7 +270,12 @@ function AirMap({
     for (let index = 0; index < field.nx * field.ny; index += 1) {
       const value = buffer[index];
       if (value === 0) {
-        image.data[index * 4 + 3] = 0;
+        // Where the model stops is the coast: painting it gives Accra and Dakar
+        // (15% and 51% no-data) a legible land/sea edge instead of a soft fade.
+        image.data[index * 4] = SEA_RGB[0];
+        image.data[index * 4 + 1] = SEA_RGB[1];
+        image.data[index * 4 + 2] = SEA_RGB[2];
+        image.data[index * 4 + 3] = 235;
         continue;
       }
       const normalized = (value - 1) / 254;
@@ -266,8 +318,21 @@ function AirMap({
         if (index === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
-      ctx.strokeStyle = river ? "rgba(213, 243, 255, .82)" : "rgba(255, 255, 255, .50)";
-      ctx.lineWidth = river ? 2 : road.k === "motorway" ? 1.3 : 0.8;
+      // A real hierarchy, so ring roads and expressways read as the frame of the
+      // city rather than dissolving into a uniform mesh of hairlines.
+      if (river) {
+        ctx.strokeStyle = "rgba(206, 240, 255, .88)";
+        ctx.lineWidth = 2.6;
+      } else if (road.k === "motorway") {
+        ctx.strokeStyle = "rgba(255, 255, 255, .82)";
+        ctx.lineWidth = 2.1;
+      } else if (road.k === "trunk") {
+        ctx.strokeStyle = "rgba(255, 255, 255, .62)";
+        ctx.lineWidth = 1.4;
+      } else {
+        ctx.strokeStyle = "rgba(255, 255, 255, .40)";
+        ctx.lineWidth = 0.85;
+      }
       ctx.lineCap = "round";
       ctx.stroke();
     }
@@ -313,6 +378,16 @@ function AirMap({
 
     const highest = city.route.reduce((best, point) => (point[pollutant] > best[pollutant] ? point : best));
 
+    const freeSpot = (
+      candidates: Array<{ x: number; y: number }>,
+      w: number,
+      h: number,
+    ) => candidates.find((option) => (
+      option.x >= 2 && option.y >= 2
+      && option.x + w <= width - 2 && option.y + h <= height - 2
+      && !occupied.some((taken) => intersects({ x: option.x, y: option.y, w, h }, taken))
+    ));
+
     const courseMarks = city.distance_km > 30
       ? [
           { km: 10, label: "10 KM" },
@@ -320,28 +395,6 @@ function AirMap({
           { km: 30, label: "30 KM" },
         ]
       : [{ km: city.distance_km / 2, label: "HALFWAY" }];
-
-    for (const mark of courseMarks) {
-      const point = city.route.reduce((nearest, candidate) => (
-        Math.abs(candidate.km - mark.km) < Math.abs(nearest.km - mark.km) ? candidate : nearest
-      ));
-      const px = x(point.lon);
-      const py = y(point.lat);
-      ctx.beginPath();
-      ctx.arc(px, py, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(7, 26, 47, .72)";
-      ctx.fill();
-      ctx.font = "700 9px Arial, sans-serif";
-      const textWidth = ctx.measureText(mark.label).width;
-      const boxX = Math.min(width - textWidth - 12, Math.max(4, px + 7));
-      const boxY = Math.min(height - 19, Math.max(4, py - 19));
-      ctx.fillStyle = "rgba(255,255,255,.84)";
-      ctx.beginPath();
-      ctx.roundRect(boxX, boxY, textWidth + 8, 16, 4);
-      ctx.fill();
-      ctx.fillStyle = "rgba(7, 26, 47, .76)";
-      ctx.fillText(mark.label, boxX + 4, boxY + 11);
-    }
 
     const marker = (point: RoutePoint, fill: string, label: string, alignRight = false) => {
       const px = x(point.lon);
@@ -353,22 +406,63 @@ function AirMap({
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = "#fff";
       ctx.stroke();
-      ctx.font = "700 10px Arial, sans-serif";
+      ctx.font = `700 10px ${MAP_FONT}`;
       const textWidth = ctx.measureText(label).width;
-      const boxX = alignRight ? px - textWidth - 20 : px + 10;
-      const boxY = py - 22;
+      const boxW = textWidth + 12;
+      const preferred = alignRight
+        ? [{ x: px - boxW - 8, y: py - 22 }, { x: px + 10, y: py - 22 }]
+        : [{ x: px + 10, y: py - 22 }, { x: px - boxW - 8, y: py - 22 }];
+      const spot = freeSpot([
+        ...preferred,
+        { x: px - boxW / 2, y: py + 12 },
+        { x: px - boxW / 2, y: py - 34 },
+      ], boxW, 20) ?? preferred[0];
       ctx.fillStyle = "rgba(255,255,255,.94)";
       ctx.beginPath();
-      ctx.roundRect(boxX, boxY, textWidth + 12, 20, 5);
+      ctx.roundRect(spot.x, spot.y, boxW, 20, 5);
       ctx.fill();
       ctx.fillStyle = "#000";
-      ctx.fillText(label, boxX + 6, boxY + 14);
+      ctx.fillText(label, spot.x + 6, spot.y + 14);
+      occupied.push({ x: spot.x, y: spot.y, w: boxW, h: 20 });
     };
 
     const start = city.route[0];
     const finish = city.route[city.route.length - 1];
     marker(start, "#44c678", "START", x(start.lon) > width * 0.72);
     marker(finish, "#ff610a", "FINISH", x(finish.lon) > width * 0.72);
+
+    for (const mark of courseMarks) {
+      const point = city.route.reduce((nearest, candidate) => (
+        Math.abs(candidate.km - mark.km) < Math.abs(nearest.km - mark.km) ? candidate : nearest
+      ));
+      const px = x(point.lon);
+      const py = y(point.lat);
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(7, 26, 47, .72)";
+      ctx.fill();
+      ctx.font = `700 9px ${MAP_FONT}`;
+      const textWidth = ctx.measureText(mark.label).width;
+      const boxW = textWidth + 8;
+      // No free space means the dot stands alone: a chip on top of another chip
+      // is worse than an unlabelled distance mark.
+      const spot = freeSpot([
+        { x: px + 7, y: py - 19 },
+        { x: px - boxW - 7, y: py - 19 },
+        { x: px + 7, y: py + 5 },
+        { x: px - boxW - 7, y: py + 5 },
+        { x: px - boxW / 2, y: py - 24 },
+        { x: px - boxW / 2, y: py + 10 },
+      ], boxW, 16);
+      if (!spot) continue;
+      ctx.fillStyle = "rgba(255,255,255,.84)";
+      ctx.beginPath();
+      ctx.roundRect(spot.x, spot.y, boxW, 16, 4);
+      ctx.fill();
+      ctx.fillStyle = "rgba(7, 26, 47, .76)";
+      ctx.fillText(mark.label, spot.x + 4, spot.y + 11);
+      occupied.push({ x: spot.x, y: spot.y, w: boxW, h: 16 });
+    }
     if (progress >= 0.999 && Math.hypot(x(highest.lon) - x(start.lon), y(highest.lat) - y(start.lat)) > 35) {
       ctx.beginPath();
       ctx.arc(x(highest.lon), y(highest.lat), 8, 0, Math.PI * 2);
@@ -393,11 +487,176 @@ function AirMap({
       ctx.stroke();
     }
 
-    ctx.font = "700 10px Arial, sans-serif";
+    ctx.font = `700 10px ${MAP_FONT}`;
     ctx.fillStyle = "rgba(255,255,255,.82)";
     ctx.fillText(`${Math.round(field.cell * 111)} km grid`, width - 72, 18);
+    occupied.push({ x: width - 78, y: 4, w: 74, h: 20 });
+
+    // Corner card: which country this is, and which event. A panel that gets
+    // screenshotted out of the page still says where and when it is - and the
+    // card gives the type a plate, so it stays legible over a busy field.
+    const cardPad = 8;
+    const cardTop = 10;
+    const cardLeft = 10;
+    const insetSize = width < 400 ? 44 : 58;
+    const cityText = city.city.toUpperCase();
+    const metaText = `${locator ? `${locator.country} · ` : ""}${formatDate(city.date)}`;
+    ctx.font = `700 11px ${MAP_FONT}`;
+    const cityWidth = ctx.measureText(cityText).width;
+    ctx.font = `600 9.5px ${MAP_FONT}`;
+    const metaWidth = ctx.measureText(metaText).width;
+    const textWidthMax = Math.max(cityWidth, metaWidth);
+    const cardW = cardPad + (locator ? insetSize + 8 : 0) + textWidthMax + cardPad;
+    const cardH = Math.max(locator ? insetSize + cardPad * 2 : 0, 40);
+
+    ctx.fillStyle = "rgba(255, 255, 255, .88)";
+    ctx.beginPath();
+    ctx.roundRect(cardLeft, cardTop, cardW, cardH, 9);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(26, 14, 154, .16)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    occupied.push({ x: cardLeft - 2, y: cardTop - 2, w: cardW + 4, h: cardH + 4 });
+
+    let textLeft = cardLeft + cardPad;
+    if (locator) {
+      const ring = locator.ring;
+      const lons = ring.filter((_, index) => index % 2 === 0);
+      const lats = ring.filter((_, index) => index % 2 === 1);
+      const minLon = Math.min(...lons);
+      const maxLat = Math.max(...lats);
+      const midLat = (Math.min(...lats) + maxLat) / 2;
+      const squeeze = Math.cos((midLat * Math.PI) / 180);
+      const spanX = (Math.max(...lons) - minLon) * squeeze;
+      const spanY = maxLat - Math.min(...lats);
+      const scale = Math.min(insetSize / Math.max(spanX, 0.001), insetSize / Math.max(spanY, 0.001));
+      const originX = cardLeft + cardPad + (insetSize - spanX * scale) / 2;
+      const originY = cardTop + cardPad + (insetSize - spanY * scale) / 2;
+      const px = (lon: number) => originX + (lon - minLon) * squeeze * scale;
+      const py = (lat: number) => originY + (maxLat - lat) * scale;
+
+      ctx.beginPath();
+      for (let index = 0; index < ring.length; index += 2) {
+        if (index === 0) ctx.moveTo(px(ring[index]), py(ring[index + 1]));
+        else ctx.lineTo(px(ring[index]), py(ring[index + 1]));
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(26, 14, 154, .14)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(26, 14, 154, .62)";
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(px(locator.city[0]), py(locator.city[1]), 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ff610a";
+      ctx.fill();
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+
+      textLeft += insetSize + 8;
+    }
+
+    const textMiddle = cardTop + cardH / 2;
+    ctx.font = `700 11px ${MAP_FONT}`;
+    ctx.fillStyle = "rgba(12, 16, 40, .92)";
+    ctx.fillText(cityText, textLeft, textMiddle - 2);
+    ctx.font = `600 9.5px ${MAP_FONT}`;
+    ctx.fillStyle = "rgba(60, 66, 100, .84)";
+    ctx.fillText(metaText, textLeft, textMiddle + 12);
+
+    // Place names last, so nothing already drawn gets covered. Panels are small,
+    // so labels that cannot find clear space are dropped rather than stacked.
+    ctx.textBaseline = "alphabetic";
+    const legendBox = { x: 4, y: height - 44, w: Math.min(260, width - 8), h: 40 };
+    const sourceBox = { x: width - 236, y: height - 26, w: 232, h: 22 };
+    occupied.push(legendBox, sourceBox);
+
+    // A river runs across the whole panel, so if its own centre is crowded the
+    // label can slide along the channel instead of being dropped - which is what
+    // kept the Chao Phraya unlabelled behind Bangkok's cluster of course chips.
+    const riverAnchors: Array<{ x: number; y: number }> = [];
+    for (const road of context.roads ?? []) {
+      if (road.k !== "river") continue;
+      for (let index = 0; index < road.c.length; index += 6) {
+        riverAnchors.push({ x: road.c[index], y: road.c[index + 1] });
+      }
+    }
+
+    const maxLabels = width < 330 ? 3 : width < 520 ? 5 : 8;
+    let placed = 0;
+    for (const label of context.labels ?? []) {
+      if (placed >= maxLabels) break;
+      const style = LABEL_STYLE[label.k];
+      if (!style) continue;
+      const text = style.caps ? label.n.toUpperCase() : label.n;
+      ctx.font = style.font;
+      ctx.letterSpacing = style.caps ? "0.05em" : "0px";
+      const textWidth = ctx.measureText(text).width;
+      const anchors = label.k === "water"
+        ? [{ x: label.x, y: label.y }, ...riverAnchors
+            .slice()
+            .sort((a, b) => Math.hypot(a.x - label.x, a.y - label.y)
+              - Math.hypot(b.x - label.x, b.y - label.y))
+            .slice(0, 14)]
+        : [{ x: label.x, y: label.y }];
+
+      let spot: { tx: number; ty: number; align: CanvasTextAlign } | undefined;
+      let anchorX = 0;
+      let anchorY = 0;
+      for (const anchor of anchors) {
+        anchorX = x(anchor.x);
+        anchorY = y(anchor.y);
+        if (anchorX < 0 || anchorX > width || anchorY < 0 || anchorY > height) continue;
+        const options = [
+          { tx: anchorX + 8, ty: anchorY + 3.5, align: "left" as CanvasTextAlign },
+          { tx: anchorX - 8, ty: anchorY + 3.5, align: "right" as CanvasTextAlign },
+          { tx: anchorX, ty: anchorY - 9, align: "center" as CanvasTextAlign },
+          { tx: anchorX, ty: anchorY + 16, align: "center" as CanvasTextAlign },
+        ];
+        spot = options.find((option) => {
+          const left = option.align === "left" ? option.tx
+            : option.align === "right" ? option.tx - textWidth
+            : option.tx - textWidth / 2;
+          const rect = { x: left - 4, y: option.ty - 11, w: textWidth + 8, h: 16 };
+          if (rect.x < 2 || rect.x + rect.w > width - 2 || rect.y < 2 || rect.y + rect.h > height - 2) {
+            return false;
+          }
+          return !occupied.some((taken) => intersects(rect, taken));
+        });
+        if (spot) break;
+      }
+      if (!spot) continue;
+
+      const left = spot.align === "left" ? spot.tx
+        : spot.align === "right" ? spot.tx - textWidth
+        : spot.tx - textWidth / 2;
+      occupied.push({ x: left - 4, y: spot.ty - 11, w: textWidth + 8, h: 16 });
+
+      if (style.dot) {
+        ctx.beginPath();
+        ctx.arc(anchorX, anchorY, 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(16, 20, 45, .72)";
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = "rgba(255,255,255,.85)";
+        ctx.stroke();
+      }
+
+      ctx.textAlign = spot.align;
+      ctx.lineJoin = "round";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255, 255, 255, .88)";
+      ctx.strokeText(text, spot.tx, spot.ty);
+      ctx.fillStyle = style.fill;
+      ctx.fillText(text, spot.tx, spot.ty);
+      placed += 1;
+    }
+    ctx.textAlign = "left";
+    ctx.letterSpacing = "0px";
     void cosLat;
-  }, [buffer, city, context, field, pollutant, progress]);
+  }, [buffer, city, context, field, locator, pollutant, progress]);
 
   useEffect(() => {
     draw();
@@ -416,7 +675,9 @@ function AirMap({
       <div className="map-legend" aria-hidden="true">
         <span>Lower</span><i className="route-ramp"/><span>Higher on this route</span>
       </div>
-      <span className="map-source">500 m air field · OSM road context</span>
+      <span className="map-source">
+        500 m air field · OSM road context{hasNoData ? " · grey = outside model grid" : ""}
+      </span>
     </div>
   );
 }
@@ -529,7 +790,7 @@ function ProfileChart({ city, pollutant, progress }: { city: City; pollutant: Po
     }
 
     ctx.fillStyle = "#64788b";
-    ctx.font = "10px Arial, sans-serif";
+    ctx.font = `10px ${MAP_FONT}`;
     ctx.textAlign = "left";
     ctx.fillText("0 km", margin.left, height - 7);
     ctx.textAlign = "center";
@@ -585,6 +846,7 @@ export function MarathonStory() {
   const [pollutant, setPollutant] = useState<Pollutant>("pm25");
   const [field, setField] = useState<Field | null>(null);
   const [context, setContext] = useState<MapContext | null>(null);
+  const [locators, setLocators] = useState<Locators>({});
   const [error, setError] = useState("");
   const [shareLabel, setShareLabel] = useState("Share");
   const [routeProgress, setRouteProgress] = useState(1);
@@ -604,6 +866,12 @@ export function MarathonStory() {
       })
       .then((data: Payload) => setPayload(data))
       .catch((reason: Error) => setError(reason.message));
+    // Locator outlines are shared by all five panels, so fetch them once. A
+    // failure here costs the inset, not the page.
+    fetch(`${ASSET_BASE}data/locator.json`)
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((data: Locators) => setLocators(data))
+      .catch(() => setLocators({}));
   }, []);
 
   useEffect(() => {
@@ -840,7 +1108,7 @@ export function MarathonStory() {
                     <span className={`evidence-badge ${EVIDENCE[city.confidence].className}`}>{EVIDENCE[city.confidence].label}</span>
                   </div>
                   {field && context ? (
-                    <AirMap city={city} field={field} context={context} pollutant={pollutant} progress={routeProgress}/>
+                    <AirMap city={city} field={field} context={context} pollutant={pollutant} progress={routeProgress} locator={locators[city.slug]}/>
                   ) : (
                     <div className="map-frame map-loading">Drawing {city.city}…</div>
                   )}

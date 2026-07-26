@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --mode inline && node make-single-file.mjs marathon-air-quality.html",
-    "preview": "vite preview --outDir docs"
+    "preview": "vite preview --outDir docs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "19.2.6",
@@ -15,8 +16,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "tailwindcss": "4.2.1",
+    "typescript": "^5.9.3",
     "vite": "8.0.13"
   },
   "description": "Interactive AirTrack analysis of modelled air quality along marathon routes in Paris, London, Bangkok, Accra and a Dakar running corridor."

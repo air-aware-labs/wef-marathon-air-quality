@@ -14,6 +14,10 @@ modelling engine.
 - Route-average and along-route concentrations for PM₂.₅, NO₂, ozone and PM₁₀.
 - A modelled 500 m concentration field for each city, with the course drawn on top and
   OpenStreetMap road and water context for orientation.
+- Place names, a locator inset and a corner card naming the city, country and event
+  date, so a panel is identifiable on its own — including when screenshotted.
+- Coastal panels show the cells the model does not cover in grey, captioned as such:
+  Accra's field is 15% no-data and Dakar's 51%, which is the Atlantic, not clean air.
 - Route replay and a distance scrubber linked to a kilometre-by-kilometre profile.
 - The same course over the 15 days around the event, to show whether event day was
   typical for the time of year.
@@ -46,6 +50,8 @@ network supports the estimate, down to `indicative` where none is available.
 | Global priors (Bangkok, Accra, Dakar) | [NASA GEOS-CF](https://gmao.gsfc.nasa.gov/weather_prediction/GEOS-CF/) |
 | Reference measurements | EEA reference network (Europe), public monitor networks elsewhere |
 | Road and water context | © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL |
+| Place names | © OpenStreetMap contributors (curated selection, `name:en` where tagged) |
+| Country outlines (locator inset) | [Natural Earth](https://www.naturalearthdata.com/) 110m admin-0, public domain |
 | Health reference values | [WHO global air quality guidelines (2021)](https://www.who.int/publications/i/item/9789240034228) |
 
 Courses are official published routes (GPX or KML) where available; the Dakar line is a
@@ -62,7 +68,21 @@ npm run dev        # development server
 
 The site is a single-page app with no backend: `public/data/*.json` holds the precomputed
 model output and is fetched at runtime. Paths are relative, so `docs/` can be served from
-any sub-path.
+any sub-path. `npm run typecheck` runs TypeScript over `src/`.
+
+Data files, and the scripts that build them (in the AirTrack modelling repo, not here):
+
+| File | Built by |
+|------|----------|
+| `data/marathons.json` | `export_deliverable_data.py` — routes, hourly values, 15-day context |
+| `data/fields/*.json` | `build_city_fields.py` — the 500 m concentration fields |
+| `data/context/*.json` | `fetch_map_context.py` + `trim_map_context.py` (roads, water), then `fetch_map_labels.py` (place names) |
+| `data/locator.json` | `fetch_locator_outlines.py` — simplified country outlines |
+
+Map labels are a curated list per city resolved to real OSM coordinates, never
+hand-placed; the sea label is anchored on the field's own no-data mask, so it can only
+ever sit where the model has no data. Labels that cannot find clear space are dropped
+rather than overlapped, so the count varies with panel size.
 
 `npm run build:single` writes a one-file, fully offline copy of the site (CSS, JS, fonts
 and data inlined) to `marathon-air-quality.html`, for embedding or emailing.
