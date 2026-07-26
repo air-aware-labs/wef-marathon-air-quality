@@ -1041,7 +1041,7 @@ function ClosureSection({ city, closure, context }: { city: City; closure: Closu
               <ClosureProfile city={city} closure={closure} context={context}/>
             </div>
           </div>
-          <aside>
+          <div className="closure-figures">
             <div className="metrics-grid">
               <div className="metric">
                 <div className="metric-label">Road closed</div>
@@ -1064,7 +1064,7 @@ function ClosureSection({ city, closure, context }: { city: City; closure: Closu
                 <div className="metric-note">Of the course within 25 m of a carriageway</div>
               </div>
             </div>
-            <div className="context-note">
+            <div className="context-note closure-note">
               <strong>How this is estimated</strong>
               <p>
                 A proximity increment is applied to each point of the course from its lateral distance
@@ -1080,7 +1080,7 @@ function ClosureSection({ city, closure, context }: { city: City; closure: Closu
                 runner on this line is real, but the city-wide benefit is smaller.
               </p>
             </div>
-          </aside>
+          </div>
         </div>
       </div>
     </section>

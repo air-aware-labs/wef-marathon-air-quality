@@ -1203,7 +1203,42 @@ a {
 
 /* Closure counterfactual: the chart carries the story, the aside the numbers. */
 .closure-card {
-  grid-template-columns: 1.42fr 0.78fr;
+  grid-template-columns: 1fr;
+  gap: 26px;
+}
+
+/* Grid children default to min-width: auto, so the canvas's intrinsic width (set
+   in JS from the measured box) keeps the track from shrinking back on narrow
+   screens and the card overflows the viewport. */
+.closure-card > div {
+  min-width: 0;
+}
+
+.closure-card canvas {
+  max-width: 100%;
+}
+
+/* Four metrics across, then prose at a readable measure - the same copy in the
+   card's side rail ran at about 35 characters a line. */
+.closure-card .metrics-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.closure-note {
+  max-width: 76ch;
+}
+
+/* The card is full-width now, so its own prose needs a measure too. */
+.closure-card > div > .chart-subtitle {
+  max-width: 82ch;
+}
+
+.closure-note p + p {
+  margin-top: 11px;
+}
+
+.closure-note p {
+  margin: 0;
 }
 
 .closure-card h4 {
@@ -1242,7 +1277,12 @@ a {
 .key-closed { border-top-color: var(--navy); }
 
 .closure-wrap {
-  min-height: 250px;
+  /* Never set min-height against the inherited aspect-ratio: with the height
+     forced up, the ratio back-computes the WIDTH and the card overflows the
+     viewport (852 px inside a 526 px window). Use a taller ratio instead. */
+  aspect-ratio: 2.9 / 1;
+  min-height: 0;
+  width: 100%;
 }
 
 .closure-toggle {
@@ -1265,5 +1305,5 @@ a {
 }
 
 @media (max-width: 940px) {
-  .closure-card { grid-template-columns: 1fr; }
+  .closure-card .metrics-grid { grid-template-columns: repeat(2, 1fr); }
 }
