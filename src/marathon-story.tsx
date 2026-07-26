@@ -1013,19 +1013,23 @@ function ClosureSection({ city, closure, context }: { city: City; closure: Closu
     <section className="section" id="closure">
       <div className="shell">
         <div className="section-head">
-          <p className="section-kicker">What the closure removes</p>
+          <p className="section-kicker">What the closure removes · London</p>
           <h2>The same Sunday, with the traffic running</h2>
           <p>
-            Everything above describes race day, when the course is closed to traffic. This compares it
-            with the same route, the same hours and the same weather, but with traffic on the road —
-            the run you would do on any other Sunday.
+            Everything above describes race day, when the course is closed to traffic. This compares the
+            London course with the same route, the same hours and the same weather, but with traffic on
+            the road — the run you would do on any other Sunday.
+          </p>
+          <p>
+            London only, deliberately: the road-gradient factors behind it come from UK reference
+            monitors and do not transfer to the other four cities.
           </p>
         </div>
 
         <div className="comparison-card closure-card">
           <div>
             <p className="mini-label">Nitrogen dioxide along the course</p>
-            <h4>Closed road versus normal Sunday traffic</h4>
+            <h4>London: closed road versus normal Sunday traffic</h4>
             <p className="chart-subtitle">
               The shaded band is the roadside increment the closure removes. It opens where the course
               runs beside main roads and closes to nothing through the parks. With the traffic running,

@@ -1184,6 +1184,7 @@ a {
   .pollutant-tabs,
   .city-tabs,
   .replay-panel,
+  .closure-toggle .compact-button,
   .footer { display: none !important; }
   body { background: #fff; color: #000; }
   .hero,
