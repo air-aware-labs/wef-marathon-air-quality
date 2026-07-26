@@ -1,0 +1,23 @@
+{
+  "name": "wef-marathon-air-quality",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode inline && node make-single-file.mjs marathon-air-quality.html",
+    "preview": "vite preview --outDir docs"
+  },
+  "dependencies": {
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@vitejs/plugin-react": "6.0.2",
+    "tailwindcss": "4.2.1",
+    "vite": "8.0.13"
+  },
+  "description": "Interactive AirTrack analysis of modelled air quality along marathon routes in Paris, London, Bangkok, Accra and a Dakar running corridor."
+}
