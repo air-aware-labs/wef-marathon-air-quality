@@ -1538,24 +1538,19 @@ export function MarathonStory() {
           <div className="shell">
             <div className="section-head">
               <p className="section-kicker">What this run suggests</p>
-              <h2>Three points to investigate</h2>
+              <h2>Where we would look next</h2>
               <p>These are early findings from the model run, not operational recommendations.</p>
             </div>
             <div className="insight-grid">
-              <article className="insight" data-number="1">
-                <p className="mini-label">Bangkok · start time</p>
-                <h3>Check the start window, not only the route</h3>
-                <p>The 02:00 race window had the highest PM₂.₅ estimate in this comparison. A separate study would be needed to test other start times and account for heat.</p>
+              <article className="insight">
+                <p className="mini-label">Timing · Bangkok and Paris</p>
+                <h3>Timing moved the result more than the route</h3>
+                <p>Bangkok&rsquo;s 02:00 start — chosen for heat, not air — still gave the highest PM₂.₅ here, on the second-worst day of the fifteen around it. Paris drew the second-cleanest day of its own fortnight. Testing start windows, and the heat trade-off behind an early one, matters more than choosing between courses.</p>
               </article>
-              <article className="insight" data-number="2">
-                <p className="mini-label">Paris · race day</p>
-                <h3>Day-to-day conditions changed more than the route</h3>
-                <p>Paris race-day PM₂.₅ ranked second-lowest in the 15-day window. That makes timing an important part of any future planning test.</p>
-              </article>
-              <article className="insight" data-number="3">
-                <p className="mini-label">Accra + Dakar · evidence</p>
+              <article className="insight">
+                <p className="mini-label">Evidence · Accra and Dakar</p>
                 <h3>Do not over-read the low values</h3>
-                <p>Neither city has a reference monitor in the local panel behind this analysis. Local measurement is needed before using these estimates for event decisions.</p>
+                <p>Neither city has a reference monitor in the area modelled here, and the model&rsquo;s own correction guard binds on more than a quarter of the Accra course. Local measurement comes before any event decision.</p>
               </article>
             </div>
           </div>
@@ -1613,7 +1608,10 @@ export function MarathonStory() {
             <img className="airtrack-logo" src={logoUrl} alt="AirTrack" />
             <span className="brand-by">by Air Aware Labs</span>
           </a>
-          <p>Marathon route analysis · <a href="https://www.airawarelabs.com/airtrack" target="_blank" rel="noreferrer">About AirTrack</a></p>
+          <p>
+            Marathon route analysis · Modelled {formatDate(payload.generated_utc.slice(0, 10))} ·{" "}
+            <a href="https://www.airawarelabs.com/airtrack" target="_blank" rel="noreferrer">About AirTrack</a>
+          </p>
         </div>
       </footer>
     </>
