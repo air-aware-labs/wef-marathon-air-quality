@@ -19,17 +19,23 @@ const toAscii = (text, esc) =>
 const jsAscii = toAscii(js, "\\u");
 const cssAscii = toAscii(css, "\\");
 
-const dataFiles = [
-  "data/marathons.json",
-  ...["accra", "bangkok", "dakar", "london", "paris"].flatMap((c) => [
-    `data/fields/${c}.json`,
-    `data/context/${c}.json`,
-  ]),
-];
+// Walk the built data directory rather than listing files: a hardcoded list
+// silently dropped locator.json and closure/london.json when they were added,
+// which would have cost the artifact its locator inset and closure section.
+const dataFiles = [];
+const walk = (dir) => {
+  for (const entry of readdirSync(join(dist, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) walk(rel);
+    else if (entry.name.endsWith(".json")) dataFiles.push(rel);
+  }
+};
+walk("data");
 const payload = {};
 for (const rel of dataFiles) {
   payload[rel] = JSON.parse(readFileSync(join(dist, rel), "utf8"));
 }
+
 // \/ is a legal JSON escape, so this can never close the host <script> element.
 // Non-ASCII is escaped because the wrapper owns <head>: without a charset
 // declaration a stray UTF-8 byte would render as mojibake (e.g. PM2.5 subscripts).
