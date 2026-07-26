@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<style>
+  @font-face { font-family:"DM Sans"; font-weight:100 1000; font-display:block;
+    src:url("./dm-sans-151a53ae.woff2") format("woff2"); }
+  * { box-sizing:border-box; margin:0; }
+  body { width:1200px; height:630px; overflow:hidden; font-family:"DM Sans",sans-serif;
+    background:#1a0e9a; color:#fff; display:grid; grid-template-columns:1fr 0.92fr; }
+  .copy { padding:64px 24px 64px 64px; display:flex; flex-direction:column; gap:22px; justify-content:center; }
+  .brandline { display:flex; align-items:center; gap:12px; }
+  .brandline img { height:30px; }
+  .brandline span { font-size:14px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:#b9c2ff; }
+  h1 { font-size:60px; line-height:1.02; font-weight:700; letter-spacing:-.02em; text-wrap:balance; }
+  .cities { font-size:21px; font-weight:600; color:#deecf9; }
+  .stat { font-size:17px; line-height:1.5; color:#b9c2ff; border-top:1px solid rgba(255,255,255,.22); padding-top:18px; }
+  .stat b { color:#fff; font-weight:700; }
+  .art { position:relative; display:flex; align-items:center; justify-content:flex-start; }
+  .art img { width:118%; max-width:none; border-radius:20px 0 0 20px;
+    box-shadow:0 26px 60px rgba(0,0,0,.34); }
+  .tag { position:absolute; top:26px; left:28px; font-size:12px; letter-spacing:.1em;
+    text-transform:uppercase; font-weight:700; color:#12086f; background:#f4e552;
+    padding:7px 12px; border-radius:999px; }
+</style></head>
+<body>
+  <div class="copy">
+    <div class="brandline"><img src="./airtrack-logo-onnavy.svg" alt="AirTrack" /><span>Marathon route analysis</span></div>
+    <h1>Air quality across five city routes</h1>
+    <div class="cities">Paris &middot; London &middot; Bangkok &middot; Accra &middot; Dakar</div>
+    <div class="stat">Modelled to 500 m for the hours each event was on the road.
+      Bangkok's course averaged <b>75.5 &micro;g/m&sup3; PM<sub>2.5</sub></b> &mdash; five times the WHO 24-hour guideline.</div>
+  </div>
+  <div class="art"><img src="./map.png" alt="Modelled NO2 field along the Paris marathon course" />
+    <div class="tag">Paris &middot; modelled NO&#8322;</div>
+  </div>
+</body></html>

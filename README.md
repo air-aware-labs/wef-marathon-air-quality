@@ -67,6 +67,17 @@ any sub-path.
 `npm run build:single` writes a one-file, fully offline copy of the site (CSS, JS, fonts
 and data inlined) to `marathon-air-quality.html`, for embedding or emailing.
 
+## Social preview card
+
+`public/og.png` is the link preview. It is built from real model output, not an
+illustration: `tools/og-card/` holds the card markup and the Paris NO₂ map panel it
+crops from the rendered site. Re-render it at 1200×630 after serving that folder:
+
+```bash
+npx serve tools/og-card    # or any static server
+# then screenshot the page at exactly 1200x630 into public/og.png
+```
+
 ## Deployment
 
 GitHub Pages serves `docs/` on the `main` branch. To publish a change: edit the source,
