@@ -1040,7 +1040,7 @@ export function MarathonStory() {
           <div className="shell signals">
             <div className="signal"><strong>AirTrack output</strong><span>All route and city concentration estimates come from the AirTrack modelling engine.</span></div>
             <div className="signal"><strong>Reference data</strong><span>Monitors support model training and validation; they are not route measurements.</span></div>
-            <div className="signal"><strong>Model scope</strong><span>Road closures and immediate roadside exposure are not explicitly modelled.</span></div>
+            <div className="signal"><strong>Model scope</strong><span>500 m background over the event window. Closures are not modelled, and these are not kerbside values.</span></div>
           </div>
         </div>
 
@@ -1144,7 +1144,7 @@ export function MarathonStory() {
                     </div>
                   </div>
                   <p className="model-scope-note">
-                    <strong>Model scope:</strong> historic background conditions at 500 m. Event road closures and the immediate roadside increment are not included.
+                    <strong>Model scope:</strong> 500 m background for the event window, from the conditions on the day. Closures are not modelled — what a closure mainly removes is the roadside increment, which is excluded here in any case.
                   </p>
                 </div>
                 <aside className="route-side">
@@ -1249,14 +1249,14 @@ export function MarathonStory() {
                 <div className="note-item"><strong>Time</strong><p>Concentrations are averaged across the hours participants were expected to be on the road. They describe the event window, not a full day.</p></div>
                 <div className="note-item"><strong>Model inputs</strong><p>AirTrack combines a Copernicus CAMS or NASA GEOS-CF atmospheric prior with emissions, population, land and terrain features to estimate background concentration at 500 m.</p></div>
                 <div className="note-item"><strong>Validation</strong><p>Reference-monitor observations support model training and evaluation where available. They are not direct measurements taken along these routes on race day.</p></div>
-                <div className="note-item"><strong>Road closures</strong><p>Closure schedules were not added to this run. The model uses normal background and static emissions patterns, so it does not claim an event-specific traffic reduction.</p></div>
+                <div className="note-item"><strong>Road closures</strong><p>Closure schedules were not added, and the 500 m background tier carries no road-level traffic term for them to act on. Since a closure mainly removes the immediate roadside increment, which is excluded here anyway, the background is close to the right quantity for a closed course.</p></div>
               </div>
               <div className="limitations method-limitations">
                 <h3>Important limitations</h3>
                 <div className="limitations-body">
                   <ul>
                     <li>These are 500 m background estimates. They do not include the immediate roadside increment that AirTrack can calculate separately.</li>
-                    <li>Marathon road closures are not explicitly modelled. Future operational work should add closure data or compare the model with measurements collected on the route.</li>
+                    <li>Two caveats remain on closures: they divert traffic rather than remove it, and much of that diversion sits inside the same 500 m cell; and because the model learns from typical days, a stretch that normally runs alongside heavy traffic may read slightly high.</li>
                     <li>They are not personal dose estimates: breathing rate, pace and individual physiology are outside this comparison.</li>
                     <li>Accra and Dakar are indicative only because there is no local reference monitor in the panel used here.</li>
                     <li>Bangkok and Accra use exploratory 500 m grids outside the current sealed AirTrack Global/RoW serving registry; Dakar uses the sealed v1.3 grid.</li>
